@@ -1,5 +1,4 @@
 import os
-import sys
 import constants
 from langchain.document_loaders import DirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
