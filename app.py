@@ -1,12 +1,12 @@
 import os
 import constants
+import ssl
 from langchain.document_loaders import DirectoryLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 from langchain.llms import OpenAI
 from langchain.chains import RetrievalQA
 from langchain.embeddings import TensorflowHubEmbeddings
-import ssl
 from langchain.document_loaders import PythonLoader
 
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -14,7 +14,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 os.environ["OPENAI_API_KEY"] = constants.APIKEY
 
 #directory
-directory = 'docs/repos/newBudget/backend'
+directory = '/Users/justinali/pythonapp/etl'
 
 #Loading directory containing text files
 def load_docs(directory):
@@ -60,9 +60,10 @@ def process_llm_response(llm_response):
     for source in llm_response["source_documents"]:
         print(source.metadata['source'])
         
-# full example
-query = "can you give me some example code to make an endpoint?"
-llm_response = qa_chain(query)
-process_llm_response(llm_response)
+@app.route('/ask', methods=['POST'])
+def ask_question():
+    query = request.json.get('query', '')
+    llm_response = qa_chain(query)
+    return jsonify(process_llm_response(llm_response))
      
 
