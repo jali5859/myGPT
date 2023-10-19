@@ -5,4 +5,6 @@ constants.py
 bwebsite/
 node_modules/
 package-lock*
-constants
+constants*
+.env*
+.env.local*
