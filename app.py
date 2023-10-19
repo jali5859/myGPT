@@ -1,69 +1,54 @@
 import os
 import constants
-import ssl
-from langchain.document_loaders import DirectoryLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores import Chroma
-from langchain.llms import OpenAI
-from langchain.chains import RetrievalQA
-from langchain.embeddings import TensorflowHubEmbeddings
-from langchain.document_loaders import PythonLoader
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.vectorstores import DeepLake
+from langchain.document_loaders import TextLoader
+from langchain.text_splitter import CharacterTextSplitter 
+from langchain.chat_models import ChatOpenAI
+from langchain.chains import ConversationalRetrievalChain
 
-ssl._create_default_https_context = ssl._create_unverified_context
+os.environ["ACTIVELOOP_TOKEN"] = constants.ACTIVELOOP_APIKEY
+os.environ["OPENAI_API_KEY"] = constants.OPENAI_APIKEY
 
-os.environ["OPENAI_API_KEY"] = constants.APIKEY
+embeddings = OpenAIEmbeddings(disallowed_special=())
+model = ChatOpenAI(model='gpt-4')
 
-#directory
-directory = '/Users/justinali/pythonapp/etl'
+root_dir = './bwebsite'
+docs = []
 
-#Loading directory containing text files
-def load_docs(directory):
-  loader = DirectoryLoader(directory,glob="**/*.py",loader_cls=PythonLoader)
-  documents = loader.load()
-  return documents
+for dirpath, dirnames, filenames in os.walk(root_dir):
+    for file in filenames:
+        try:
+            loader = TextLoader(os.path.join(dirpath, file), encoding='utf-8')
+            docs.extend(loader.load_and_split())
+        except Exception as e:
+            pass
+print(len(docs))
 
-#splitting the loaded text files
-def split_docs(documents,chunk_size=1000,chunk_overlap=0):
-  text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-  docs = text_splitter.split_documents(documents)
-  return docs
+text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
 
-documents = load_docs(directory)
-len(documents)
-docs = split_docs(documents)
+texts = text_splitter.split_documents(docs)
 
-#save embeddings on disk from db
-persist_directory = 'db/repos'
-embedding =  TensorflowHubEmbeddings()
-vectordb = Chroma.from_documents(
-  documents=docs,
-  embedding=embedding,
-  persist_directory=persist_directory
-)
+username = "jali5859"
+db = DeepLake(dataset_path=f"hub://{username}/bwebsite", embedding=embeddings)
+db.add_documents(texts)
 
-retriever = vectordb.as_retriever(search_kwargs={"k": 1})
-retriever.search_type
-newdocs=retriever.get_relevant_documents("backend files")
+dbl = DeepLake(dataset_path=f"hub://{username}/bwebsite",read_only=True, embedding=embeddings)
 
-len(newdocs)
+retriever = dbl.as_retriever()
+retriever.search_kwargs['distance_metric'] = 'cos'
+retriever.search_kwargs['fetch_k'] = 100
+retriever.search_kwargs['maximal_marginal_relevance'] = True
+retriever.search_kwargs['k'] = 10
 
-# create the chain to answer questions 
-qa_chain = RetrievalQA.from_chain_type(llm=OpenAI(), 
-                                  chain_type="stuff", 
-                                  retriever=retriever, 
-                                  return_source_documents=True)
+qa = ConversationalRetrievalChain.from_llm(model,retriever=retriever)
 
-## Cite sources
-def process_llm_response(llm_response):
-    print(llm_response['result'])
-    # print('\n\nSources:')
-    for source in llm_response["source_documents"]:
-        print(source.metadata['source'])
-        
-@app.route('/ask', methods=['POST'])
-def ask_question():
-    query = request.json.get('query', '')
-    llm_response = qa_chain(query)
-    return jsonify(process_llm_response(llm_response))
-     
+questions = ["What componenets does this application have?","What sub componenets does the CustomHeader component have?"]
 
+chat_history = []
+
+for question in questions:
+    result = qa({"question" : question, "chat_history": chat_history})
+    chat_history.append((question, result['answer']))
+    print(f"-> **Question**: {question} \n")
+    print(f"-> **Answer**: {result['answer']} \n")
